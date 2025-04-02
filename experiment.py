@@ -146,9 +146,15 @@ class OTdataset:
         '''See the calibration of the dataset'''
         pass
 
-    def calibrate_function_gen(self, quiet=False):
-        '''Calibrate the function generator'''
-        pass
+    def calibrate_function_gen(self, plots=['lin_fit']):
+        '''Calibrate the function generator
+        Args:
+        plots: list of plots to show, default has 'lin_fit'
+        '''
+        plots = {}
+        for plot_name in plots:
+            plots[plot_name] = True
+        
 
 class passiveOT(OTdataset):
     '''Class for processing passive OT datasets'''
