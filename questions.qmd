@@ -1,0 +1,5 @@
+---
+title: questions about code
+---
+
+## within load data filter, we use a sos filter: why?
