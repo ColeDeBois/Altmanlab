@@ -3,5 +3,7 @@
         "activityBar.background": "#1A2B0A",
         "titleBar.activeBackground": "#22380D",
         "titleBar.activeForeground": "#F6FCF1"
-    }
+    },
+    "editor.fontFamily": "'Bitstream Vera Sans Mono Roman', 'Meslo LG S', Consolas, Menlo, monospace",
+    "editor.fontSize": 13
 }
