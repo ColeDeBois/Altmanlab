@@ -1,11 +1,12 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.optimize
-plt.style.use('default')
+import scipy.fft
 import os
 from scipy import signal
-from scipy.optimize import curve_fit
-import scipy.fft
+plt.style.use('default')
+
 
 fs = 50000  # data collection rate
 dt = 1/fs
@@ -30,6 +31,73 @@ def func(x, a, b):    # fitting function for the PSD
     return a**2*(D/((np.pi)**2)) / ( (b/(2*np.pi*beta))**2 + x**2) # from eqn 10 Berg-Sorensen et al. 2004
        # a - Sensitivity - units of V/m
        # b - Stiffness - N/m
+
+def autocorrFFT(x):     # used by the program that calculates the meansquared displacement
+    N=len(x)
+    F = np.fft.fft(x, n=2*N)  #2*N because of zero-padding
+    PSD = F * F.conjugate()
+    res = np.fft.ifft(PSD)
+    res= (res[:N]).real   #now we have the autocorrelation in convention B
+    n=N*np.ones(N)-np.arange(0,N) #divide res(m) by (N-m)
+    return res/n #this is the autocorrelation in convention A
+
+def msd_fft(x, y):      # calculate the mean squared displacement
+    # Organize the data into a 2-column array where each row contains an x and y position
+    r = np.ones((int(len(x)), 2))
+    for i in range(0,int(len(x))):
+        values = [x[i], y[i]]
+        r[i] =  values
+
+    # calculate the MSD using the FFT
+    N=len(r)
+    D=np.square(r).sum(axis=1)
+    D=np.append(D,0)
+    S2=sum([autocorrFFT(r[:, i]) for i in range(r.shape[1])])
+    Q=2*D.sum()
+    S1=np.zeros(N)
+    for m in range(N):
+        Q=Q-D[m-1]-D[N-m]
+        S1[m]=Q/(N-m)
+    msdval = S1-2*S2
+    tau = np.multiply(dt, [i for i in range(0, len(msdval))])
+    msdvalues = pd.DataFrame({'tau': tau, 'msd': msdval})
+    return msdvalues
+
+def calcmsd2(x, y, analysislength, msdlength):
+            dt = 1/50000
+            fs = 50000
+        # Select data to analyze MSD and fourier transform
+            xdata = x[0:int(analysislength)]
+            ydata = y[0:int(analysislength)]
+
+
+            sos = signal.butter(10, 1, 'hp', fs=50000, output='sos')
+            xdata = signal.sosfilt(sos, xdata)
+            ydata = signal.sosfilt(sos, ydata)
+
+
+            msdvalues = msd_fft(xdata, ydata)
+            tautemp = msdvalues.tau
+            msdtemp = msdvalues.msd
+            msdvalues.tau = tautemp[0:int(msdlength/dt)]
+            msdvalues.msd = msdtemp[0:int(msdlength/dt)]
+
+            plt.figure()
+            plt.loglog(msdvalues.tau[1:int(msdlength/(dt))], msdvalues.msd[1:int(msdlength/(dt))], 'b.', label = 'Bead in the Optical Trap')
+            plt.figure()
+            msddata = np.array(msdvalues.msd[1:int(msdlength/dt)]) / (1e18)
+            N = len(msddata)
+            T = 1/fs
+            yf = scipy.fft.fft(msddata)
+            xf = scipy.fft.fftfreq(N, T)[:N//2]
+
+            print(len(xf))
+            print(len(yf))
+            plt.plot(xf[100:1500], 2.0/N * np.abs(yf[100:1500]))
+            plt.xlabel('frequency (Hz)')
+            plt.title('Fourier transform of the MSD')
+            plt.show()
+            return msdvalues
 
 
         
@@ -56,6 +124,16 @@ class OTdataset:
         print('ky: ', self.ky)
         print('trapx: ', self.trapx)
         print('trapy: ', self.trapy)
+    
+    def free_memory(self):
+        '''
+        Free up memory when done with the analysis
+        WARNING: this will break any references to the raw data
+        '''
+        self.x = None
+        self.y = None
+        self.sumsignal = None
+        self.fg = None
 
     def _load_data(self, fh:str, return_power_spectrum:bool = False) -> tuple[np.array, np.array, np.array, np.array]:
         '''Load the data from file, concatenate it and return it as a tuple of arrays
@@ -66,8 +144,8 @@ class OTdataset:
         return_power_spectrum: bool = False, whether to return the power spectrum of the data or not
 
         Returns:
-        longdatax: np.array, x position data
-        longdatay: np.array, y position data
+        longdatax: np.array, x position data 
+        longdatay: np.array, y position data 
         longdatasum: np.array, sum of x and y position data
         longdatafg: np.array, force data
         optional:
@@ -77,7 +155,6 @@ class OTdataset:
         def file_sort(s):
             return int(s.split('_')[-1]) # slow
         
-        count = 0
         longdatax = []
         longdatay = []
         longdatasum = []
@@ -93,7 +170,7 @@ class OTdataset:
             datay = dim[2::4]
             datafg = dim[3::4]
             datasum = dim[1::4]
-            for i in range(len(datax)):
+            for i in range(fs):
                 longdatax.append(datax[i])
                 longdatay.append(datay[i])
                 longdatasum.append(datasum[i])
@@ -101,6 +178,7 @@ class OTdataset:
 
             if return_power_spectrum:
                 breakitup = 10
+                count = 0
                 for k in range(0, int(fs), int(fs/breakitup)):
                     dataxchunk = datax[k:int(k+(fs/breakitup))]
                     dataychunk = datay[k:int(k+(fs/breakitup))]
@@ -108,7 +186,7 @@ class OTdataset:
                     powerspecx += Pxx_den
                     fy, Pyy_den = calcpowerspec2(dataychunk)
                     powerspecy += Pyy_den
-                    count = count+1
+                    count += 1
         
         
         if return_power_spectrum:
@@ -141,11 +219,11 @@ class OTdataset:
 
         # Fit the power spectrum to get the trap stiffness
         # x
-        poptx, pcov = curve_fit(func, f[initial:final], powerspecx[initial:final], p0=[1e5, 1e-3])
+        poptx, pcov = scipy.optimize.curve_fit(func, f[initial:final], powerspecx[initial:final], p0=[1e5, 1e-3])
         alphax = abs(poptx[1])
 
         # y
-        popty, pcov = curve_fit(func, f[initial:final], powerspecy[initial:final], p0=[1e5, 1e-3])
+        popty, pcov = scipy.optimize.curve_fit(func, f[initial:final], powerspecy[initial:final], p0=[1e5, 1e-3])
         alphay = abs(popty[1])
         if visualize:
             fig=plt.figure(figsize=(10, 10), tight_layout=True)
@@ -239,20 +317,22 @@ class OTdataset:
         jumpy_idxs = absdiff > (np.mean(absdiff)*5)
         
         if plots['signal_jumps']:
-            fig = plt.figure(figsize=(10, 5), tight_layout=True)
+            fig = plt.figure(figsize=(10, 5))
             fig.suptitle('Function Generator Signal Jumps')
-            ax = fig.add_subplot(211)
-            ax.set_title('Highlighted Non-jump Signal')
+            ax = fig.add_subplot(212)
+            ax.set_title('Highlighted Jumps in Signal')
             ax.plot(t[1:], fg[1:], 'k')
             ax.plot(t[1:][jumpy_idxs], fg[1:][jumpy_idxs], 'r.')
             ax.set_ylabel('Signal (V)')
             plt.xlabel('Time (s)')
-            bx = fig.add_subplot(212)
+            bx = fig.add_subplot(211)
             bx.set_title('Absolute Differences')
             bx.plot(t[1:], absdiff, 'k,')
             bx.set_ylabel('Signal Difference (V)')
+            
         
-        # Reduce signal jumps to a single point i.e. throw out the in between points
+        # Reduce signal jumps to a single point i.e. throw out everything but the end of the jump
+        # Also convert from boolean indexing to integer indexing
         idx = []
         previous: bool = jumpy_idxs[0]
         for i, current in enumerate(jumpy_idxs):
@@ -260,12 +340,14 @@ class OTdataset:
                 idx.append(i-1) #Marking the end of jumps for exclusive indexing
             previous = current
         
+        # compile the standard deviation of the signal in the stable regions
         stdfg = []
         for i in range(len(idx)-1):
             rangeval = (t[idx[i]] < t) * (t < t[idx[i+1]])
             stdfg.append(np.std(np.abs(fg[rangeval])))
         stdfg = np.array(stdfg)
         
+        # get the avg fg and y in each stable region
         avg_fg = []
         avg_y = []
         threshold = 1.1*np.mean(stdfg) # setting the threshold to the mean of the std of the signal
@@ -274,7 +356,6 @@ class OTdataset:
                 rangeval = (t[idx[i] + int(fs/2 * .75)] < t) * (t < t[idx[i] + int(fs/2 * .95)]) #getting the last 0.2 seconds of the signal
                 meanfg = np.mean(fg[rangeval])
                 meany = np.mean(y[rangeval])
-                print(f'meanfg: {meanfg}, meany: {meany}')
                 avg_fg.append(meanfg)
                 avg_y.append(meany)
         
@@ -293,6 +374,8 @@ class OTdataset:
         self.a=a
         self.b=b
 
+
+
                 
 
 class Passive_Analysis(OTdataset):
@@ -305,6 +388,47 @@ class Passive_Analysis(OTdataset):
         self.fh = fh + subhandle
         self.x, self.y, self.sumsignal, self.fg = self._load_data(self.fh)
         self.t = np.arange(len(self.x))*dt
+    
+    
+
+    def final_analysis(self):
+        '''Run the final analysis on the passive data, resulting in self.G1, self.G2'''
+        x,y,fg,t = self.x, self.y, self.fg, self.t
+
+        avg_msd = np.zeros(int(0.1*fs))
+        msd_df:pd.DataFrame = calcmsd2(x, y, t[-1], 20) #max tau of 20 seconds
+
+        alpha_list = []
+        omega_list = []
+        logtau_list = []
+        logmsd_list = []
+        tau_list = []
+        msd_list = []
+        analsis_length = 20 #???
+
+        def linear_alpha(x, m, b):
+            return m*x + b
+        
+        N = 0.2 # iteration steps
+
+        msd = msd_df.msd[:int(analsis_length*fs)]
+        tau = msd_df.tau[:int(analsis_length*fs)]
+        logmsd = np.log10(msd)
+        logtau = np.log10(tau)
+
+        if True:
+            plt.figure()
+            plt.plot(logtau, logmsd, 'k')
+            plt.xlabel('log(tau)')
+            plt.ylabel('log(MSD)')
+            plt.title('Log-Log plot of MSD vs tau')
+            plt.grid()
+        
+        for i in np.arange(-5, np.log10(5)-N, N):
+            pass
+
+
+
 
 
         
@@ -318,11 +442,12 @@ class Active_Analysis(OTdataset):
 
         # Load the data
         self.x, self.y, self.sumsignal, self.fg = self._load_data(self.fh+'/')
-        self.x/self.Sx - self.trapx, self.y/self.Sy - self.trapy
+        self.x/=self.Sx 
+        self.y/=self.Sy 
         self.t = np.arange(len(self.x))*dt
     
-    def kowalski__analysis(self):
-        '''Run Kowalski analysis on the active data'''
+    def final_analysis(self, show_freq_plot=True):
+        '''Run the final analysis on the active data, resulting in self.G1, self.G2'''
         x,y,fg,t = self.x, self.y, self.fg, self.t #just for ease
         # Calculate the power spectrum of the data
         frequencies = []
@@ -352,20 +477,108 @@ class Active_Analysis(OTdataset):
         delta = []
 
         for i in range(len(frequencies)):
+            if i != 0 and (frequencies[i] - frequencies[i-1]) < 1:
+                # print(f'skipping {i}th frequency', frequencies[i]) #debug printing
+                continue 
             if frequencies[i] < 30:
                 Nfit = 10 # number of oscillations to fit at the lower range (<30Hz)
             else:
                 Nfit = 100
             T = 1/frequencies[i] #period
-            x = self.x[i*fs:(i+int(Nfit*T))*fs] #we are indexing the data in seconds needed for Nfit oscillations
-            y = self.y[i*fs:(i+int(Nfit*T))*fs]
-            fg = self.fg[i*fs:(i+int(Nfit*T))*fs]
-            t = np.arange(len(x))*dt
-
-            plt.plot(t, fg, 'k')
+            x = self.x[i*fs:(i*fs+int(Nfit*T*fs))] #we are indexing the data in seconds needed for Nfit oscillations
+            y = self.y[i*fs:(i*fs+int(Nfit*T*fs))]
+            fg = self.fg[i*fs:(i*fs+int(Nfit*T*fs))]
+            t = np.arange(len(y))*dt
             
+            # Fit the fg data to a sine
             params, params_cov = scipy.optimize.curve_fit(sinefit, t, fg, p0=[np.std(fg)*np.sqrt(2),np.pi, 0, 2*np.pi*frequencies[i]])
             phase = params[1]
-            fg_freq = params[3]
+            fg_freq = params[3]/(2*np.pi)
+            freqlist.append(fg_freq) 
 
-            plt.plot(t, sinefit(t, *params), 'r-')
+            if show_freq_plot:
+                plt.figure(tight_layout=True)
+                plt.subplot(311)
+                plt.plot(t, fg, 'k')
+                plt.plot(t, sinefit(t, *params), 'r-')
+                plt.title(f'Frequency: {fg_freq} Hz')
+
+            Fcurve = -(self.ky / 1e-12 * 1e-9) * (((y-np.mean(y)) - (fg-np.mean(fg)))) # pN
+
+            # Fit the y data to a sine
+            Noscil = 3
+            oscil_freq = fg_freq
+            params, params_cov = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), t, y, p0=[np.std(y)*np.sqrt(2), 0, 0])
+            params = np.append(params, 2*np.pi*oscil_freq)
+            phase = params[1]
+
+            if show_freq_plot: 
+                plt.subplot(312).set_title('Y Data Averaging (black is average)')
+
+            avg_y = np.zeros(int(Noscil/oscil_freq/dt))
+            times = dt*np.arange(len(avg_y))
+            count = 0
+            for j in range(0, len(y), avg_y.shape[0]):
+                if len(y[j:j+int(Noscil/oscil_freq/dt)]) == len(avg_y):
+                    count += 1
+                    avg_y += y[j:j+int(Noscil/oscil_freq/dt)]
+                    if show_freq_plot:
+                        plt.plot(times, y[j:j+int((Noscil/oscil_freq)/dt)], ',')
+            avg_y /= count
+            
+            if show_freq_plot:
+                plt.plot(times, avg_y, 'k-')
+            params, params_cov = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), times, avg_y, p0=[np.std(y)*np.sqrt(2), 0, 0])
+            params = np.append(params, 2*np.pi*oscil_freq)
+            yphase = params[1]
+            ynot.append(params[0]*1e-9) #TODO: check if params is a list or just a value
+
+            # Fit the forces
+            params, params_covariance = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), t, Fcurve, p0=[np.std(Fcurve)*np.sqrt(2), 0, 0])
+            params = np.append(params, 2*np.pi*oscil_freq)
+
+            if show_freq_plot:
+                plt.subplot(313).set_title('Force Averaging (black is average)')
+            
+            avg_F = np.zeros(int(Noscil/oscil_freq/dt))
+            times = dt*np.arange(len(avg_F))
+            count = 0
+            for j in range(0, len(Fcurve), avg_F.shape[0]):
+                if len(Fcurve[j:j+int(Noscil/oscil_freq/dt)]) == len(avg_F):
+                    count += 1
+                    avg_F += Fcurve[j:j+int(Noscil/oscil_freq/dt)]
+                    if show_freq_plot:
+                        plt.plot(times, Fcurve[j:j+int((Noscil/oscil_freq)/dt)], ',')
+            avg_F /= count
+            
+            if show_freq_plot:
+                plt.plot(times, avg_F, 'k-')
+            params, params_cov = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), times, avg_F, p0=[np.std(Fcurve)*np.sqrt(2), 0, 0])
+            params = np.append(params, 2*np.pi*oscil_freq)
+
+            deltatemp = yphase - params[1]
+            if deltatemp < 0:
+                deltatemp += 2*np.pi
+            delta.append(deltatemp)
+            fnot.append(params[0]*1e-12)
+
+
+        freqlist = np.array(freqlist)
+        ynot = np.array(ynot)
+        fnot = np.array(fnot)
+        delta = np.array(delta)
+
+        # Calculate the G'(G1) and G''(G2)
+        G1 = np.abs(fnot/ynot)*np.cos(delta)
+        G2 = np.abs(fnot/ynot)*np.sin(delta)
+        self.G1 = G1
+        self.G2 = G2
+        plt.figure()
+        plt.loglog(freqlist, G1, 'k*', label='G\'')
+        plt.loglog(freqlist, G2, 'r*', label='G\'\'')
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Viscoelastic Moduli (Pa)')
+        plt.legend()
+
+
+
