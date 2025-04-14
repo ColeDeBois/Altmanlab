@@ -40,23 +40,20 @@ jobs:
 
           # Set the access token as an environment variable for the next steps
           echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
-      
+          
       - name: Copy files to Google Drive
         run: |
           # Get the access token
           ACCESS_TOKEN=$ACCESS_TOKEN
-
-          # Define the folder ID in Google Drive (replace with your folder ID)
-          FOLDER_ID="1DJz6CRSMToVWyzQ5iP4hBIby8FHp57uc?dmr=1&ec=wgc-drive-hero-goto"
+          
+          # Define the folder ID in Google Drive (cleaned up without query parameters)
+          FOLDER_ID="1DJz6CRSMToVWyzQ5iP4hBIby8FHp57uc"
           DRIVE_API_URL="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
 
           # Create a multipart request to upload files to Google Drive
-          for file in $(find . -type f); do
+          for file in $(find . -type f -readable); do
             curl -X POST $DRIVE_API_URL \
               -H "Authorization: Bearer $ACCESS_TOKEN" \
               -F "metadata={name : \"$(basename $file)\", parents: [\"$FOLDER_ID\"]};type=application/json;charset=UTF-8" \
-              -F "file=@$file"
+              -F "file=@$file" || echo "Failed to upload $file"
           done
-          
-          # Set the access token as an environment variable for the next steps
-          echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
