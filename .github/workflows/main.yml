@@ -41,29 +41,22 @@ jobs:
           # Set the access token as an environment variable for the next steps
           echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
       
-      - name: Get new access token using refresh token
+      - name: Copy files to Google Drive
         run: |
-          set -e
-          
-          REFRESH_TOKEN=$(cat refresh_token.txt)
-          CLIENT_ID=$(cat client_id.txt)
-          CLIENT_SECRET=$(cat client_secret.txt)
-          
-          # Request a new access token using the refresh token
-          RESPONSE=$(curl -s -X POST https://oauth2.googleapis.com/token \
-            -d "client_id=${CLIENT_ID}" \
-            -d "client_secret=${CLIENT_SECRET}" \
-            -d "refresh_token=${REFRESH_TOKEN}" \
-            -d "grant_type=refresh_token")
-            
-          echo "Response: $RESPONSE"
-          
-          # Check if the response contains an access token
-          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
-          if [[ -z "$ACCESS_TOKEN" || "$ACCESS_TOKEN" == "null" ]]; then
-            echo "Error: Failed to fetch access token"
-            exit 1
-          fi
+          # Get the access token
+          ACCESS_TOKEN=$ACCESS_TOKEN
+
+          # Define the folder ID in Google Drive (replace with your folder ID)
+          FOLDER_ID="1DJz6CRSMToVWyzQ5iP4hBIby8FHp57uc?dmr=1&ec=wgc-drive-hero-goto"
+          DRIVE_API_URL="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+
+          # Create a multipart request to upload files to Google Drive
+          for file in $(find . -type f); do
+            curl -X POST $DRIVE_API_URL \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              -F "metadata={name : \"$(basename $file)\", parents: [\"$FOLDER_ID\"]};type=application/json;charset=UTF-8" \
+              -F "file=@$file"
+          done
           
           # Set the access token as an environment variable for the next steps
           echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
