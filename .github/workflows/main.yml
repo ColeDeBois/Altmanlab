@@ -24,6 +24,7 @@ jobs:
 
       - name: Authenticate with Google Drive
         run: |
+          python
           import os
           from google.oauth2.credentials import Credentials
           from google_auth_oauthlib.flow import InstalledAppFlow
@@ -43,6 +44,7 @@ jobs:
 
       - name: Upload repository contents to Google Drive
         run: |
+          python
           import os
           import pickle
           from googleapiclient.discovery import build
@@ -56,7 +58,7 @@ jobs:
           drive_service = build('drive', 'v3', credentials=credentials)
 
           # Get the ID of the shared folder (replace with your folder ID)
-          folder_id = 'YOUR_GOOGLE_DRIVE_FOLDER_ID'
+          folder_id = '1DJz6CRSMToVWyzQ5iP4hBIby8FHp57uc?dmr=1&ec=wgc-drive-hero-goto'
 
           def upload_files(file_path, folder_id):
               media = MediaFileUpload(file_path, resumable=True)
