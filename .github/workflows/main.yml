@@ -45,7 +45,7 @@ jobs:
           ACCESS_TOKEN=$ACCESS_TOKEN
 
           # Define the folder ID in Google Drive (replace with your folder ID)
-          FOLDER_ID="your_google_drive_folder_id_here"
+          FOLDER_ID="1DJz6CRSMToVWyzQ5iP4hBIby8FHp57uc?dmr=1&ec=wgc-drive-hero-goto"
           DRIVE_API_URL="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
 
           # Create a multipart request to upload files to Google Drive
