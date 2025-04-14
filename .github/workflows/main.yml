@@ -51,7 +51,7 @@ jobs:
           DRIVE_API_URL="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
 
           # Create a multipart request to upload files to Google Drive
-          for file in $(find . -type f \(-name '*.py' -o -name '*ipynb' \)) | while read -r file; do
+          for file in $(find . -type f \(-name '*.py' -o -name '*ipynb' \)); do
             curl -X POST $DRIVE_API_URL \
               -H "Authorization: Bearer $ACCESS_TOKEN" \
               -F "metadata={name : \"$(basename $file)\", parents: [\"$FOLDER_ID\"]};type=application/json;charset=UTF-8" \
