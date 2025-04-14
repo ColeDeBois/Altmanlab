@@ -13,6 +13,9 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v3
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Set up Google Cloud credentials
         run: |
           echo "${{ secrets.GOOGLE_CLIENT_ID }}" > client_id.txt
@@ -33,38 +36,34 @@ jobs:
             -d "refresh_token=${REFRESH_TOKEN}" \
             -d "grant_type=refresh_token")
           
-          echo "Response: $RESPONSE" 
           ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
 
           # Set the access token as an environment variable for the next steps
           echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
-
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
       
       - name: Get new access token using refresh token
         run: |
           set -e
-      
+          
           REFRESH_TOKEN=$(cat refresh_token.txt)
           CLIENT_ID=$(cat client_id.txt)
           CLIENT_SECRET=$(cat client_secret.txt)
-      
+          
           # Request a new access token using the refresh token
           RESPONSE=$(curl -s -X POST https://oauth2.googleapis.com/token \
             -d "client_id=${CLIENT_ID}" \
             -d "client_secret=${CLIENT_SECRET}" \
             -d "refresh_token=${REFRESH_TOKEN}" \
             -d "grant_type=refresh_token")
-      
+            
           echo "Response: $RESPONSE"
-      
+          
           # Check if the response contains an access token
           ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
           if [[ -z "$ACCESS_TOKEN" || "$ACCESS_TOKEN" == "null" ]]; then
             echo "Error: Failed to fetch access token"
             exit 1
           fi
-      
+          
           # Set the access token as an environment variable for the next steps
           echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
