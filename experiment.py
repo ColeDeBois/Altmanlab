@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.optimize
+from scipy.optimize import curve_fit
 import scipy.fft
 import os
 from scipy import signal
@@ -13,6 +14,7 @@ dt = 1/fs
 kBT = 4.11e-21     # room temp (J)
 #eta = 0.001  # Pa s, viscosity of water
 eta = 0.002548 # Pa s, viscosity of BSA solution
+eta = .001856 # viscosity of 20% iodixinol
 r = (2.0e-6)/2      # radius of bead
 D = kBT /(6*np.pi*eta*r)    # diffusion constant
 beta = 6*np.pi*eta*r
@@ -67,13 +69,13 @@ def calcmsd2(x, y, analysislength, msdlength):
             dt = 1/50000
             fs = 50000
         # Select data to analyze MSD and fourier transform
-            xdata = x[0:int(analysislength)]
-            ydata = y[0:int(analysislength)]
+            xdata = x[0:int(analysislength/dt)]
+            ydata = y[0:int(analysislength/dt)]
 
 
-            sos = signal.butter(10, 1, 'hp', fs=50000, output='sos')
-            xdata = signal.sosfilt(sos, xdata)
-            ydata = signal.sosfilt(sos, ydata)
+            # sos = signal.butter(10, 1, 'hp', fs=50000, output='sos')
+            # xdata = signal.sosfilt(sos, xdata)
+            # ydata = signal.sosfilt(sos, ydata)
 
 
             msdvalues = msd_fft(xdata, ydata)
@@ -164,13 +166,14 @@ class OTdataset:
 
         fhs = sorted(os.listdir(fh), key=file_sort)
         fhs = fhs[:-1] # remove the last file, as this causes errors
+        count = 0
         for i, sh in enumerate(fhs):
             dim = openfile(fh+sh)
             datax = dim[0::4]
             datay = dim[2::4]
             datafg = dim[3::4]
             datasum = dim[1::4]
-            for i in range(fs):
+            for i in range(len(datax)):
                 longdatax.append(datax[i])
                 longdatay.append(datay[i])
                 longdatasum.append(datasum[i])
@@ -178,7 +181,6 @@ class OTdataset:
 
             if return_power_spectrum:
                 breakitup = 10
-                count = 0
                 for k in range(0, int(fs), int(fs/breakitup)):
                     dataxchunk = datax[k:int(k+(fs/breakitup))]
                     dataychunk = datay[k:int(k+(fs/breakitup))]
@@ -187,6 +189,7 @@ class OTdataset:
                     fy, Pyy_den = calcpowerspec2(dataychunk)
                     powerspecy += Pyy_den
                     count += 1
+                
         
         
         if return_power_spectrum:
@@ -213,17 +216,17 @@ class OTdataset:
             raise ValueError('No brownian data found in the folder')
         
         xb, yb, sumsignalb, fg, f, powerspecx, powerspecy = self._load_data(fh, return_power_spectrum=True)
-        initial = 3 # starting frequency for the fit
-        list = [i for i in range(len(f)) if f[i] > 1000] 
+        initial = 4 # starting frequency for the fit
+        list = [i for i in range(len(f)) if f[i] > 4000] 
         final = list[0]
 
         # Fit the power spectrum to get the trap stiffness
         # x
-        poptx, pcov = scipy.optimize.curve_fit(func, f[initial:final], powerspecx[initial:final], p0=[1e5, 1e-3])
+        poptx, pcov = curve_fit(func, f[initial:final], powerspecx[initial:final], p0=[1e5, 1e-3])
         alphax = abs(poptx[1])
 
         # y
-        popty, pcov = scipy.optimize.curve_fit(func, f[initial:final], powerspecy[initial:final], p0=[1e5, 1e-3])
+        popty, pcov = curve_fit(func, f[initial:final], powerspecy[initial:final], p0=[1e5, 1e-3])
         alphay = abs(popty[1])
         if visualize:
             fig=plt.figure(figsize=(10, 10), tight_layout=True)
@@ -271,7 +274,7 @@ class OTdataset:
         '''See the calibration of the trap for the dataset'''
         pass
 
-    def calibrate_function_gen(self, show_plots=['lin_fit']):
+    def calibrate_function_gen(self,lin_range = [-200*1e-9,150*1e-9], show_plots=['lin_fit']):
         '''Calibrate the function generator
         Args:
         plots: list of plots to show, default has only the 'lin_fit'
@@ -314,7 +317,7 @@ class OTdataset:
         
         # Plot the function generator signal jumps
         absdiff = np.abs(np.diff(fg))
-        jumpy_idxs = absdiff > (np.mean(absdiff)*5)
+        jumpy_idxs = absdiff > (np.mean(absdiff)*100)
         
         if plots['signal_jumps']:
             fig = plt.figure(figsize=(10, 5))
@@ -364,13 +367,14 @@ class OTdataset:
 
         # Fit the avg fg to the avg y in our linear region
         plt.figure()
-        upper_bound = 150*1e-9 + self.trapy
-        lower_bound = -200*1e-9 + self.trapy
+        upper_bound = lin_range[1] + self.trapy
+        lower_bound = lin_range[0] + self.trapy
         inrange = (lower_bound < avg_y) * (avg_y < upper_bound)
-        a, b = np.polyfit(avg_fg[inrange], 1e9*avg_y[inrange], 1)
-        plt.plot(avg_fg, 1e9*avg_y, 'k,')
-        plt.plot(avg_fg[inrange], a* avg_fg[inrange] + b, 'g-')
-        plt.plot(avg_fg[inrange], 1e9*avg_y[inrange], 'r.', alpha=0.5)
+        a, b = np.polyfit(avg_fg[inrange], 1e9*avg_y[inrange], 1)   
+        plt.plot(avg_fg, 1e9*avg_y, 'k.')
+        plt.plot(avg_fg[inrange], 1e9*avg_y[inrange], 'r.', alpha=0.25)
+        plt.plot(avg_fg[inrange], a*avg_fg[inrange] + b, 'g*')
+        plt.plot(0, 1e9*self.trapy, 'pb', label='Trap Center') 
         self.a=a
         self.b=b
 
@@ -380,17 +384,17 @@ class OTdataset:
 
 class Passive_Analysis(OTdataset):
     '''Class for processing passive OT datasets'''
-    def __init__(self, fh, subhandle):
+    def __init__(self, fh, params=None):
         '''fh: file handle for where brownian folder can be found, subhandle: relative file handle of the passive dataset i.e. bead1p/'''
-        super().__init__(fh)
+        super().__init__(fh, params)
         
         # Load the data
-        self.fh = fh + subhandle
+        self.fh = fh +'/'
         self.x, self.y, self.sumsignal, self.fg = self._load_data(self.fh)
+        self.x/=self.Sx
+        self.y/=self.Sy
         self.t = np.arange(len(self.x))*dt
     
-    
-
     def final_analysis(self):
         '''Run the final analysis on the passive data, resulting in self.G1, self.G2'''
         x,y,fg,t = self.x, self.y, self.fg, self.t
@@ -425,7 +429,63 @@ class Passive_Analysis(OTdataset):
             plt.grid()
         
         for i in np.arange(-5, np.log10(5)-N, N):
-            pass
+            idx = (i < logtau) * (logtau < i+N)
+
+            logmsd_list.append(np.mean(logmsd[idx]))
+            logtau_list.append(np.mean(logtau[idx]))
+            tau_list.append(np.mean(tau[idx]))
+            msd_list.append(np.mean(msd[idx]))
+
+            omega_list.append(1/(10**logtau_list[-1]))
+
+            if len(logtau_list) > 1:
+                slope = (logmsd_list[-1] - logmsd_list[-2]) / (logtau_list[-1] - logtau_list[-2])
+            else:
+                slope = float("NaN")
+            
+            alpha_list.append(slope)
+        
+        if True:
+            plt.figure()
+            plt.suptitle('Passive Analysis Parameters')
+            plt.subplot(2,1,1)
+            plt.plot(logtau_list, logmsd_list, 'ko')
+            plt.ylabel('log(msd)')
+
+            plt.subplot(2,1,2)
+            plt.plot(logtau_list, alpha_list, 'ko')
+            plt.xlabel('log(tau)')
+            plt.ylabel('alpha')
+
+        d = 2 # dimensionality of the system
+        T = 293.15 # room temperature in K
+        K_B = 1.38064852e-23 # Boltzmann constant in J/K
+        R = (2e-6)/2 # radius of the bead in m
+        
+        G1 = []
+        G2 = []
+
+        for i in range(1,len(omega_list)):
+            gamma = (0.457*(1+alpha_list[i])**2) - (1.36*(1+alpha_list[i])) + 1.9 #approx value from Mason 2000 p.373 below eqn. 8
+            Gstar = abs((2*d*K_B*T)/(6*np.pi*R*msd_list[i]*gamma))
+            G1temp = Gstar*np.cos(alpha_list[i]*np.pi/2)
+            G2temp = Gstar*np.sin(alpha_list[i]*np.pi/2)
+            G1.append(G1temp)
+            G2.append(G2temp)
+        G1 = np.array(G1)
+        G2 = np.array(G2)
+        omega_list = np.array(omega_list[1:])
+
+        self.G1 = G1
+        self.G2 = G2
+        self.omegalist = omega_list
+
+        plt.figure()
+        plt.loglog(omega_list, G1, 'k*', label='G\'')
+        plt.loglog(omega_list, G2, 'r*', label='G\'\'')
+        plt.xlabel('Angular Frequency (Radians)', )
+        plt.ylabel('Viscoelastic Moduli (Pa)')
+        plt.legend()
 
 
 
@@ -573,6 +633,7 @@ class Active_Analysis(OTdataset):
         G2 = np.abs(fnot/ynot)*np.sin(delta)
         self.G1 = G1
         self.G2 = G2
+        self.freqlist = freqlist
         plt.figure()
         plt.loglog(freqlist, G1, 'k*', label='G\'')
         plt.loglog(freqlist, G2, 'r*', label='G\'\'')
