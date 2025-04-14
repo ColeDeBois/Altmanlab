@@ -3,75 +3,54 @@ name: Copy Repo to Google Drive
 on:
   push:
     branches:
-      - main  # You can customize this to your preferred branch
+      - main
 
 jobs:
-  copy-to-drive:
+  upload_to_drive:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout the repo
         uses: actions/checkout@v3
 
-      - name: Set up Python environment
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      - name: Install required dependencies
+      - name: Set up Google Cloud credentials
         run: |
-          pip install --upgrade pip
-          pip install --quiet google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+          echo "${{ secrets.GOOGLE_CLIENT_ID }}" > client_id.txt
+          echo "${{ secrets.GOOGLE_CLIENT_SECRET }}" > client_secret.txt
+          echo "${{ secrets.GOOGLE_REFRESH_TOKEN }}" > refresh_token.txt
 
-      - name: Authenticate with Google Drive
+      - name: Get new access token using refresh token
         run: |
-          python -i
-          import os
-          from google.oauth2.credentials import Credentials
-          from google_auth_oauthlib.flow import InstalledAppFlow
-          from google.auth.transport.requests import Request
-          import pickle
+          # Get the current refresh token from secrets
+          REFRESH_TOKEN=$(cat refresh_token.txt)
+          CLIENT_ID=$(cat client_id.txt)
+          CLIENT_SECRET=$(cat client_secret.txt)
 
-          # The credentials will be used to authenticate
-          credentials = Credentials.from_authorized_user_info(
-              client_id=os.getenv('GOOGLE_CLIENT_ID'),
-              client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
-              refresh_token=os.getenv('GOOGLE_REFRESH_TOKEN')
-          )
+          # Request a new access token using the refresh token
+          RESPONSE=$(curl -s -X POST https://oauth2.googleapis.com/token \
+            -d "client_id=${CLIENT_ID}" \
+            -d "client_secret=${CLIENT_SECRET}" \
+            -d "refresh_token=${REFRESH_TOKEN}" \
+            -d "grant_type=refresh_token")
+          
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
 
-          # Saving credentials to a file
-          with open('token.pickle', 'wb') as token:
-              pickle.dump(credentials, token)
+          # Set the access token as an environment variable for the next steps
+          echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
 
-      - name: Upload repository contents to Google Drive
+      - name: Copy files to Google Drive
         run: |
-          python
-          import os
-          import pickle
-          from googleapiclient.discovery import build
-          from googleapiclient.http import MediaFileUpload
+          # Get the access token
+          ACCESS_TOKEN=$ACCESS_TOKEN
 
-          # Load the credentials
-          with open('token.pickle', 'rb') as token:
-              credentials = pickle.load(token)
+          # Define the folder ID in Google Drive (replace with your folder ID)
+          FOLDER_ID="your_google_drive_folder_id_here"
+          DRIVE_API_URL="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
 
-          # Build the Google Drive API client
-          drive_service = build('drive', 'v3', credentials=credentials)
-
-          # Get the ID of the shared folder (replace with your folder ID)
-          folder_id = '1DJz6CRSMToVWyzQ5iP4hBIby8FHp57uc?dmr=1&ec=wgc-drive-hero-goto'
-
-          def upload_files(file_path, folder_id):
-              media = MediaFileUpload(file_path, resumable=True)
-              file_metadata = {'name': os.path.basename(file_path), 'parents': [folder_id]}
-              drive_service.files().create(media_body=media, body=file_metadata, fields='id').execute()
-
-          # Loop through the files in the repository and upload them
-          for root, dirs, files in os.walk('.'):
-              for file in files:
-                  file_path = os.path.join(root, file)
-                  upload_files(file_path, folder_id)
-
-      - name: Clean up
-        run: |
-          # Clean up by removing any sensitive data
-          rm -f token.pickle
+          # Create a multipart request to upload files to Google Drive
+          for file in $(find . -type f); do
+            curl -X POST $DRIVE_API_URL \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              -F "metadata={name : \"$(basename $file)\", parents: [\"$FOLDER_ID\"]};type=application/json;charset=UTF-8" \
+              -F "file=@$file"
+          done
