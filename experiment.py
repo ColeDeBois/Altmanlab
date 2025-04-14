@@ -588,7 +588,7 @@ class Active_Analysis(OTdataset):
             avg_y /= count
             
             if show_freq_plot:
-                plt.plot(times, avg_y, 'k-')
+                plt.plot(times, avg_y % (2/oscil_freq), 'k-')
             params, params_cov = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), times, avg_y, p0=[np.std(y)*np.sqrt(2), 0, 0])
             params = np.append(params, 2*np.pi*oscil_freq)
             yphase = params[1]
