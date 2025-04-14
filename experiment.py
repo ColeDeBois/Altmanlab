@@ -1,3 +1,4 @@
+'''the following code is for analyzing data from the optical trap, including passive and active analysis'''
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -265,7 +266,7 @@ class OTdataset:
 
         Sx=poptx[0]
         Sy=popty[0]
-        return Sx, Sy, alphax, alphay, np.mean(xb)/Sx, np.mean(yb)/Sy #TODO: check if this is correct for trapx & trapy
+        return Sx, Sy, alphax, alphay, np.mean(xb)/Sx, np.mean(yb)/Sy 
 
 
     
@@ -591,7 +592,7 @@ class Active_Analysis(OTdataset):
             params, params_cov = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), times, avg_y, p0=[np.std(y)*np.sqrt(2), 0, 0])
             params = np.append(params, 2*np.pi*oscil_freq)
             yphase = params[1]
-            ynot.append(params[0]*1e-9) #TODO: check if params is a list or just a value
+            ynot.append(params[0]*1e-9) 
 
             # Fit the forces
             params, params_covariance = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), t, Fcurve, p0=[np.std(Fcurve)*np.sqrt(2), 0, 0])
