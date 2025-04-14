@@ -1,25 +1,75 @@
-name: "Upload to Google Drive"
+name: Copy Repo to Google Drive
+
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main  # You can customize this to your preferred branch
+
 jobs:
-  upload:
+  copy-to-drive:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      
-      - name: Install rclone
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install required dependencies
         run: |
-          curl https://rclone.org/install.sh | sudo bash
-        
-      - name: Configure rclone
+          pip install --upgrade pip
+          pip install --quiet google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+
+      - name: Authenticate with Google Drive
         run: |
-          mkdir -p ~/.config/rclone
-          echo '${{ secrets.RCLONE_CONFIG }}' > ~/.config/rclone/rclone.conf
-      - name: Upload to Google Drive
+          import os
+          from google.oauth2.credentials import Credentials
+          from google_auth_oauthlib.flow import InstalledAppFlow
+          from google.auth.transport.requests import Request
+          import pickle
+
+          # The credentials will be used to authenticate
+          credentials = Credentials.from_authorized_user_info(
+              client_id=os.getenv('GOOGLE_CLIENT_ID'),
+              client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+              refresh_token=os.getenv('GOOGLE_REFRESH_TOKEN')
+          )
+
+          # Saving credentials to a file
+          with open('token.pickle', 'wb') as token:
+              pickle.dump(credentials, token)
+
+      - name: Upload repository contents to Google Drive
         run: |
-          rclone copy ./ gdrive:microrheologycodebase --exclude ".git/**" --exclude ".github/**" -v
-        env:
-          RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
-        
+          import os
+          import pickle
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          # Load the credentials
+          with open('token.pickle', 'rb') as token:
+              credentials = pickle.load(token)
+
+          # Build the Google Drive API client
+          drive_service = build('drive', 'v3', credentials=credentials)
+
+          # Get the ID of the shared folder (replace with your folder ID)
+          folder_id = 'YOUR_GOOGLE_DRIVE_FOLDER_ID'
+
+          def upload_files(file_path, folder_id):
+              media = MediaFileUpload(file_path, resumable=True)
+              file_metadata = {'name': os.path.basename(file_path), 'parents': [folder_id]}
+              drive_service.files().create(media_body=media, body=file_metadata, fields='id').execute()
+
+          # Loop through the files in the repository and upload them
+          for root, dirs, files in os.walk('.'):
+              for file in files:
+                  file_path = os.path.join(root, file)
+                  upload_files(file_path, folder_id)
+
+      - name: Clean up
+        run: |
+          # Clean up by removing any sensitive data
+          rm -f token.pickle
