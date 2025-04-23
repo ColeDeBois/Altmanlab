@@ -604,7 +604,7 @@ class Active_Analysis(OTdataset):
 
             if show_freq_plot:
                 plt.figure(tight_layout=True)
-                plt.subplot(311)
+                plt.subplot(411)
                 plt.plot(t, fg, 'k')
                 plt.plot(t, sinefit(t, *params), 'r-')
                 plt.title(f'{i}th Frequency: {fg_freq} Hz')
@@ -619,7 +619,7 @@ class Active_Analysis(OTdataset):
             phase = params[1]
 
             if show_freq_plot: 
-                plt.subplot(312).set_title('Y Data Averaging (black is average)')
+                plt.subplot(412).set_title('Y Data Averaging (black is average)')
 
             avg_y = np.zeros(int(Noscil/oscil_freq/dt))
             times = dt*np.arange(len(avg_y))
@@ -644,7 +644,7 @@ class Active_Analysis(OTdataset):
             params = np.append(params, 2*np.pi*oscil_freq)
 
             if show_freq_plot:
-                plt.subplot(313).set_title('Force Averaging (black is average)')
+                plt.subplot(413).set_title('Force Averaging (black is average)')
             
             avg_F = np.zeros(int(Noscil/oscil_freq/dt))
             times = dt*np.arange(len(avg_F))
@@ -667,6 +667,11 @@ class Active_Analysis(OTdataset):
                 deltatemp += 2*np.pi
             delta.append(deltatemp)
             fnot.append(params[0]*1e-12)
+
+            if show_freq_plot:
+                plt.subplot(414).set_title('Bead distance from trap')
+                plt.plot(t, (1e9*y-np.mean(1e9*y)) - (OTdata-np.mean(OTdata)), 'C7,')
+
 
 
         freqlist = np.array(freqlist)
