@@ -87,6 +87,9 @@ def calcmsd2(x, y, analysislength, msdlength):
 
             plt.figure()
             plt.loglog(msdvalues.tau[1:int(msdlength/(dt))], msdvalues.msd[1:int(msdlength/(dt))], 'b.', label = 'Bead in the Optical Trap')
+            plt.xlabel('tau (s)')
+            plt.ylabel('MSD (m^2)')
+            plt.title('calcmsd2 Plot: MSD vs tau')
             plt.figure()
             msddata = np.array(msdvalues.msd[1:int(msdlength/dt)]) / (1e18)
             N = len(msddata)
@@ -423,13 +426,21 @@ class Passive_Analysis(OTdataset):
         self.y/=self.Sy
         self.t = np.arange(len(self.x))*dt
     
-    def final_analysis(self):
-        '''Run the final analysis on the passive data, resulting in self.G1, self.G2'''
-        x,y,fg,t = self.x, self.y, self.fg, self.t
+    def final_analysis(self, trap=False, plots=['G1G2']):
+        '''Run the final analysis on the passive data, resulting in self.G1, self.G2
+        Args:
+        trap: bool, indicate if the trap was on or off
+        plots: list of plots to show, options:
+            'msd': plot the log-log plot of MSD vs tau
+            'params': plot the passive analysis parameters
+            'G1G2': plot the G1 and G2 values
+        '''
+        x,y,t = self.x, self.y, self.t
 
         avg_msd = np.zeros(int(0.1*fs))
         msd_df:pd.DataFrame = calcmsd2(x, y, t[-1], 20) #max tau of 20 seconds
-
+        if plots == []:
+            plt.close('all')
         alpha_list = []
         omega_list = []
         logtau_list = []
@@ -448,7 +459,7 @@ class Passive_Analysis(OTdataset):
         logmsd = np.log10(msd)
         logtau = np.log10(tau)
 
-        if True:
+        if 'msd' in plots:
             plt.figure()
             plt.plot(logtau, logmsd, 'k')
             plt.xlabel('log(tau)')
@@ -473,7 +484,7 @@ class Passive_Analysis(OTdataset):
             
             alpha_list.append(slope)
         
-        if True:
+        if 'params' in plots:
             plt.figure()
             plt.suptitle('Passive Analysis Parameters')
             plt.subplot(2,1,1)
@@ -489,6 +500,9 @@ class Passive_Analysis(OTdataset):
         T = 293.15 # room temperature in K
         K_B = 1.38064852e-23 # Boltzmann constant in J/K
         R = (2e-6)/2 # radius of the bead in m
+
+        ktrap = (self.kx + self.ky)/2 # average trap stiffness
+        offset = ktrap/(6*np.pi*R)
         
         G1 = []
         G2 = []
@@ -498,6 +512,8 @@ class Passive_Analysis(OTdataset):
             Gstar = abs((2*d*K_B*T)/(6*np.pi*R*msd_list[i]*gamma))
             G1temp = Gstar*np.cos(alpha_list[i]*np.pi/2)
             G2temp = Gstar*np.sin(alpha_list[i]*np.pi/2)
+            if trap: #if the trap was on, we need to subract its forces on the bead
+                G1temp -= offset
             G1.append(G1temp)
             G2.append(G2temp)
         G1 = np.array(G1)
@@ -507,13 +523,15 @@ class Passive_Analysis(OTdataset):
         self.G1 = G1
         self.G2 = G2
         self.omegalist = omega_list
-
-        plt.figure()
-        plt.loglog(omega_list, G1, 'k*', label='G\'')
-        plt.loglog(omega_list, G2, 'r*', label='G\'\'')
-        plt.xlabel('Angular Frequency (Radians)', )
-        plt.ylabel('Viscoelastic Moduli (Pa)')
-        plt.legend()
+        
+        if 'G1G2' in plots:
+            plt.figure()
+            plt.loglog(omega_list, G1, 'k*', label='G\'')
+            plt.loglog(omega_list, G2, 'r*', label='G\'\'')
+            plt.xlabel('Angular Frequency (Radians)', )
+            plt.ylabel('Viscoelastic Moduli (Pa)')
+            plt.legend()
+    
 
 
 
