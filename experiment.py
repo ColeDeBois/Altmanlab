@@ -274,11 +274,14 @@ class OTdataset:
     def see_calibration(self):
         '''See the calibration of the trap for the dataset'''
         pass
+        
 
-    def calibrate_function_gen(self,lin_range = [-200*1e-9,150*1e-9], show_plots=['lin_fit']):
+    def calibrate_function_gen(self, poly_fit=(1,(-1000, -200)) ,lin_range = [-200*1e-9,150*1e-9], show_plots=['lin_fit']):
         '''Calibrate the function generator
         Args:
-        plots: list of plots to show, default has only the 'lin_fit'
+        poly_fit: degree of polynomial to fit, default is 1 (linear fit), (range of bead positions to fit)
+        lin_range: range of y values to fit the linear region, default is [-200nm, 150nm]
+        show_plots: list of plots to show, default has only the 'lin_fit'
 
         Returns:
         None, but sets self.a and self.b to the calibration parameters, which is needed for active analysis
@@ -378,6 +381,30 @@ class OTdataset:
         plt.plot(0, 1e9*self.trapy, 'pb', label='Trap Center') 
         self.a=a
         self.b=b
+
+        if poly_fit[0] > 1:
+            bead_pos = a*avg_fg + b
+            detector_V = avg_y*self.Sy
+
+            index = (bead_pos > poly_fit[1][0]) * (bead_pos < poly_fit[1][1])
+            coeffs = np.polyfit(detector_V[index], bead_pos[index], poly_fit[0])
+            print('coeffs:', coeffs)
+            
+            plt.figure()
+            plt.plot(detector_V, bead_pos, 'k.')
+            plt.plot(detector_V[index], bead_pos[index], 'gs', alpha=0.25)
+            plt.plot(detector_V, np.polyval(coeffs, detector_V), 'r.')
+            plt.xlabel('Detector Voltage (V)')
+            plt.ylabel('Bead Position (nm)')
+            self.yBACKUP = self.y
+            y_copy = self.y*self.Sy
+            y_copy = np.polyval(coeffs, y_copy)
+            self.y=1e-9*y_copy
+
+    def reset_y(self):
+        '''Reset the y data to the original data'''
+        self.y = self.yBACKUP
+        self.yBACKUP = None
 
 
 
@@ -509,22 +536,30 @@ class Active_Analysis(OTdataset):
     
     def final_analysis(self, show_freq_plot=True):
         '''Run the final analysis on the active data, resulting in self.G1, self.G2'''
-        x,y,fg,t = self.x, self.y, self.fg, self.t #just for ease
+        y,fg,t = self.y, self.fg, self.t #just for ease
         # Calculate the power spectrum of the data
-        frequencies = []
-        for i in range(0, len(x), fs):
-            Y = scipy.fft.fft(fg[i:i+fs]) # indexing one second of data for this (aka the entire bead_{i} file)
-            N = len(Y)
+        frequences = []
+        for i in range(0,len(fg)-fs,fs): #second chunks
+            fgchunk = fg[i:i+fs]
+            tchunk = t[i:i+fs]
+            Y = scipy.fft.fft(fgchunk)
+            N = len(fgchunk)
             n = np.arange(N)
             T = N/fs
             freq = n/T
-            # filter out the frequencies that are out of our working range
-            working_range: np.ndarray[np.bool_] = (freq>0.1)*(freq<20000) 
-            freq = freq[working_range]
-            Y = np.abs(Y[working_range])
-            for f in freq[Y == max(Y)]:
-                frequencies.append(f)
+            index = (freq > 0.1) * (freq < 20000)
+            freq = freq[index]
+            Y = np.abs(Y[index])
+            top_freq = freq[Y == np.max(Y)]
+            frequences.append(top_freq[0])
+        
+        frequences = np.array(frequences)
+        changeinfreq = (np.diff(frequences) > 0.5)
+        freq_changes = np.arange(len(changeinfreq))[changeinfreq]
+
             
+
+        print('Frequency changes:', freq_changes)
         def sinefit(t, A, C, D, omega):
             return np.abs(A) * np.sin(omega*t - C)+D
         def sinefit2(freqoscil):
@@ -536,23 +571,33 @@ class Active_Analysis(OTdataset):
         fnot = []
         ynot = []
         delta = []
-
-        for i in range(len(frequencies)):
-            if i != 0 and (frequencies[i] - frequencies[i-1]) < 1:
-                # print(f'skipping {i}th frequency', frequencies[i]) #debug printing
-                continue 
-            if frequencies[i] < 30:
-                Nfit = 10 # number of oscillations to fit at the lower range (<30Hz)
+        
+        for i in range(len(freq_changes)-1):
+            if i == 0:
+                f = 1
+                start = 0
+                end = freq_changes[0]*fs
             else:
-                Nfit = 100
-            T = 1/frequencies[i] #period
-            x = self.x[i*fs:(i*fs+int(Nfit*T*fs))] #we are indexing the data in seconds needed for Nfit oscillations
-            y = self.y[i*fs:(i*fs+int(Nfit*T*fs))]
-            fg = self.fg[i*fs:(i*fs+int(Nfit*T*fs))]
-            t = np.arange(len(y))*dt
+                f = frequences[freq_changes[i]]
+                start = (freq_changes[i-1]+1)*fs + (fs // 2) #catching tailing ends of frequencies by throwing out starting half second of data
+                end = (freq_changes[i])*fs
+                
+            T = 1/f #period
+            y = self.y[start:end]
+            fg = self.fg[start:end]
+            t = np.arange(len(fg))*dt
+
+            if len(fg) == 0:
+                print(f'function generator signal is empty for {start/fs} - {end/fs} seconds segment')
+                continue
+
+            fgfit = fg - np.mean(fg) # in V
+            OTdata = self.a * fg + self.b # in Nm
             
             # Fit the fg data to a sine
-            params, params_cov = scipy.optimize.curve_fit(sinefit, t, fg, p0=[np.std(fg)*np.sqrt(2),np.pi, 0, 2*np.pi*frequencies[i]])
+            params, params_cov = scipy.optimize.curve_fit(sinefit, t, fgfit, p0=[np.std(fgfit)*np.sqrt(2), 0, 0, 2*np.pi*f])
+            if np.abs(np.std(fgfit)*np.sqrt(2)/params[0]) > 2:
+                params, params_cov = scipy.optimize.curve_fit(sinefit, t, fgfit, p0=[np.std(fgfit)*np.sqrt(2), np.pi, 0, 2*np.pi*f])
             phase = params[1]
             fg_freq = params[3]/(2*np.pi)
             freqlist.append(fg_freq) 
@@ -562,12 +607,12 @@ class Active_Analysis(OTdataset):
                 plt.subplot(311)
                 plt.plot(t, fg, 'k')
                 plt.plot(t, sinefit(t, *params), 'r-')
-                plt.title(f'Frequency: {fg_freq} Hz')
+                plt.title(f'{i}th Frequency: {fg_freq} Hz')
 
-            Fcurve = -(self.ky / 1e-12 * 1e-9) * (((y-np.mean(y)) - (fg-np.mean(fg)))) # pN
+            Fcurve = -(self.ky / 1e-12 * 1e-9) * (((1e9*y-np.mean(1e9*y)) - (OTdata-np.mean(OTdata)))) # pN
 
             # Fit the y data to a sine
-            Noscil = 3
+            Noscil = 5
             oscil_freq = fg_freq
             params, params_cov = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), t, y, p0=[np.std(y)*np.sqrt(2), 0, 0])
             params = np.append(params, 2*np.pi*oscil_freq)
@@ -592,7 +637,7 @@ class Active_Analysis(OTdataset):
             params, params_cov = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), times, avg_y, p0=[np.std(y)*np.sqrt(2), 0, 0])
             params = np.append(params, 2*np.pi*oscil_freq)
             yphase = params[1]
-            ynot.append(params[0]*1e-9) 
+            ynot.append(params[0]) 
 
             # Fit the forces
             params, params_covariance = scipy.optimize.curve_fit(sinefit2(2*np.pi*oscil_freq), t, Fcurve, p0=[np.std(Fcurve)*np.sqrt(2), 0, 0])
@@ -630,8 +675,8 @@ class Active_Analysis(OTdataset):
         delta = np.array(delta)
 
         # Calculate the G'(G1) and G''(G2)
-        G1 = np.abs(fnot/ynot)*np.cos(delta)
-        G2 = np.abs(fnot/ynot)*np.sin(delta)
+        G1 = np.abs(fnot/(6*np.pi*1e-6*ynot))*np.cos(delta)
+        G2 = np.abs(fnot/(6*np.pi*1e-6*ynot))*np.sin(delta)
         self.G1 = G1
         self.G2 = G2
         self.freqlist = freqlist

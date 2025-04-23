@@ -1,0 +1,53 @@
+#we want the step sizes to be shrinking in the next "loop", i.e.  we want to look at 10 secs then 5 secs, then 3 secs, etc.
+        # implementing with recursion
+        frequencies = []
+        # freq_idxs = {}
+        # def _helper(start, duration, iteration):
+        #     if duration < fs/4: # if the duration is less than a tenth of a second, 
+        #         duration = fs/4 # duration will be a quater second for the rest of the time
+        #     fg_chunk = self.fg[int(start):int(start+duration)]
+        #     Y = scipy.fft.fft(fg_chunk)
+        #     N = len(Y)
+        #     n = np.arange(N)
+        #     T = N/fs
+        #     freq = n/T
+        #     # filter out the frequencies that are out of our working range
+        #     working_range: np.ndarray[np.bool_] = (freq>0.1)*(freq<20000)
+        #     freq = freq[working_range]
+        #     Y = np.abs(Y[working_range])
+        #     strongest_freq = freq[Y == max(Y)][0]
+        #     if strongest_freq in freq_idxs:
+        #         freq_idxs[strongest_freq][1] = int(start+duration)
+        #     else:
+        #         freq_idxs[strongest_freq] = [int(start), int(start+duration)] #store the bookend indexes of the chunk
+        #     frequencies.append(strongest_freq) # append the frequency with the highest amplitude (same as the freq_idxs.key())
+        #     if len(self.fg) > (start + 2*duration):
+        #         _helper(start+duration, duration/iteration, iteration+1)
+        
+        # #calling the recursive function, just think of it as a for loop with logarithmicly shrinking step sizes
+        # _helper(0, 15*fs, 2)
+        # plt.figure()
+        # colors = ['C0','C1','C2','C3']
+        # i=0
+        # for f in freq_idxs:
+        #     i+=1
+        #     c=colors[i%4]
+        #     idxs = freq_idxs[f]
+        #     plt.plot(t[idxs],[f,f], '-', color=c)
+        # frequencies=list(freq_idxs.keys())
+        # bools = np.diff(frequencies) > .5
+        # freq = frequencies[0]
+        # for i,jump in enumerate(bools, start=1):
+        #     if jump:
+        #         freq = frequencies[i]
+        #     else:
+        #         freq_idxs[freq][1] = freq_idxs[frequencies[i]][1]
+        #         del freq_idxs[frequencies[i]]
+        # plt.figure()
+        # colors = ['C0','C1','C2','C3']
+        # i=0
+        # for f in freq_idxs:
+        #     i+=1
+        #     c=colors[i%4]
+        #     idxs = freq_idxs[f]
+        #     plt.plot(t[idxs],[f,f], '-', color=c)
