@@ -279,13 +279,13 @@ class OTdataset:
         pass
         
 
-    def calibrate_function_gen(self, poly_fit=(1,(-1000, -200)) ,lin_range = [-200*1e-9,150*1e-9], show_plots=['lin_fit']):
+    def calibrate_function_gen(self, poly_fit=(1,(-1000, -200)) ,lin_range = [-200*1e-9,150*1e-9], show_plots=['lin_fit'], jumps_thresh=100):
         '''Calibrate the function generator
         Args:
         poly_fit: degree of polynomial to fit, default is 1 (linear fit), (range of bead positions to fit)
         lin_range: range of y values to fit the linear region, default is [-200nm, 150nm]
         show_plots: list of plots to show, default has only the 'lin_fit'
-
+        jumps_thresh: threshold for the function generator signal jumps, default is 100, older datasets may need this to like 5
         Returns:
         None, but sets self.a and self.b to the calibration parameters, which is needed for active analysis
         '''
@@ -324,7 +324,7 @@ class OTdataset:
         
         # Plot the function generator signal jumps
         absdiff = np.abs(np.diff(fg))
-        jumpy_idxs = absdiff > (np.mean(absdiff)*100)
+        jumpy_idxs = absdiff > (np.mean(absdiff)*jumps_thresh)
         
         if plots['signal_jumps']:
             fig = plt.figure(figsize=(10, 5))
